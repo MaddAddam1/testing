@@ -154,7 +154,6 @@ public class phasei {
          * R/W loc:    Original hole location
          * Return value:  T/F was partition inserted?
          *
-         *
          */
         public static boolean insertPart(int size, ArrayList<MemBlock> blocks, // size is process size, blocks are collections
                                          int loc) {                     // of memory blocks, which are collections of pages
