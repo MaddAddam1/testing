@@ -340,7 +340,7 @@ public class phasei {
 //******************************************************** END PROCESS CREATION ************************************************************
 
         int currentVtu = 0;
-        int hole, readySize, toBeRemoved;
+        int readySize, toBeRemoved;
 
 
         while(currentVtu < MAX_VTUS){
