@@ -84,7 +84,7 @@ public class MemSim {
                                      int loc) {                     // of memory blocks, which are collections of pages
         MemBlock b = blocks.get(loc);                             // pages = like 1 for each hk size, so 50kb = mem block of 50 pages
 
-        if ((b.getSize() < size)||(b.isPart())) {
+        if ((b.getSize() < size) || (b.isPart())) {
             // can't create partition
             return false;
 

@@ -18,6 +18,7 @@ public class phasei {
     public static int nchecks;
 
     public static int[] main_memory = new int[2000];
+    public static int rejectedProcesses, finishedProcesses;
 
 
 
@@ -156,12 +157,15 @@ public class phasei {
          *
          */
         public static boolean insertPart(int size, ArrayList<MemBlock> blocks, // size is process size, blocks are collections
-                                         int loc) {                     // of memory blocks, which are collections of pages
+                                         int loc, ArrayList<Process> process, int index, ArrayList<Process> running) {                     // of memory blocks, which are collections of pages
             MemBlock b = blocks.get(loc);                             // pages = like 1 for each hk size, so 50kb = mem block of 50 pages
                                                                     // LOC = index in blocks of MEMBLOCKS array
 
             if ((b.getSize() < size) || (b.isPart())) {
                 // can't create partition
+                rejectedProcesses++;
+                running.add(process.get(index));
+                process.remove(index);
                 return false;
 
             } else if (b.getSize() == size) {
@@ -172,7 +176,7 @@ public class phasei {
                 // extra hole left over
                 b.setSize(b.getSize() - size);
                 //blocks.insertElementAt(new MemBlock(size,false), loc); //changed from vector
-                blocks.add(loc, new MemBlock(size, false));
+                blocks.add(loc, new MemBlock(size, false));     // replacing original block
             }
             return true;
         } // end of insertPart()
@@ -223,12 +227,13 @@ public class phasei {
          * TODO means index contains memory of process, so go thru arraylist and add up block.get(i).getSize()
          *
          */
-        public static int chooseEviction(ArrayList<MemBlock> blocks) {
+        public static int chooseEviction(ArrayList<MemBlock> blocks, ArrayList<Process> process, int vtu, ArrayList<Process> finished) {
             MemBlock b; // memblock practically a block of process's memory its taking up
             int victim;
             int loc = 0;
             int npart = 0;
             int count = 0;
+            int vic = 0;
 
             // count partitions
             for (int i = 0; i < blocks.size(); i++) {
@@ -237,7 +242,6 @@ public class phasei {
                     npart++;
                 }
             }
-            //System.out.println(npart);
 
             // make sure memory is not empty
             if (npart == 0) {
@@ -245,20 +249,26 @@ public class phasei {
                 System.exit(-1);
             }
 
-            // choose a victim
-            victim = rand.nextInt(npart);
-
-            // figure the block number
-            for (int i = 0; i < blocks.size(); i++) {
-                b = blocks.get(i);
-                if (b.isPart()) {
-                    if (count == victim) {
-                        //System.out.println("Removing "+i);
-                        loc = i;
+            for(int t = 0; t < process.size(); t++){
+                if(process.get(t).getEnd() == vtu){     //TODO: probably not right, the selection of eviction, not lined up with blocks size and readyqueue size, maybe getting the wrong one
+                        victim = t;
+                        finished.add(process.get(t));
+                        process.remove(t);
+                        finishedProcesses++;
+                    // figure the block number
+                    for (int i = 0; i < blocks.size(); i++) {
+                        b = blocks.get(i);
+                        if (b.isPart()) {
+                            if (count == victim) {
+                                //System.out.println("Removing "+i);
+                                loc = i;
+                            }
+                            count++;
+                        }
                     }
-                    count++;
                 }
             }
+
             return loc;
         } // end of chooseEviction()
 
@@ -287,16 +297,6 @@ public class phasei {
                         loc = i;
                     }
                 }
-            }
-
-            // if not big enough, perform evictions
-            while (maxSize < size) {
-                loc = chooseEviction(blocks);
-                //printBlocks(blocks);
-                System.out.println("Evicting partition of size "
-                        + blocks.get(loc).getSize());
-                loc = removePart(blocks, loc);
-                maxSize = blocks.get(loc).getSize();
             }
             return loc;
         } // end of worstFit()
@@ -340,6 +340,8 @@ public class phasei {
 //******************************************************** END PROCESS CREATION ************************************************************
 
         int currentVtu = 0;
+        int hole, readySize, toBeRemoved;
+
 
         while(currentVtu < MAX_VTUS){
 
@@ -358,44 +360,21 @@ public class phasei {
 
                 for(int i = 0; i < readyQueue.size(); i++){ // run through all processes in the ready queue
 
-                    int readySize = readyQueue.get(i).getProcessSize();
+                    readySize = readyQueue.get(i).getProcessSize();
+                    hole = worstFit(readySize, blocks);
+                    insertPart(readySize, blocks, hole, readyQueue, i, running); // inserting partition of process size into main block of memory
+                    // TODO getting the right value for loc variable very important -- hole is the index location of the worst hole
+                    // TODO have to check for space, if there's any, rejecting process
 
-                    insertPart(readySize, blocks, i + 1); // inserting partition of process size into main block of memory
-                    // TODO getting the right value for loc variable very important
-
-                    running.add(readyQueue.get(i));
-                    readyQueue.remove(i);
                 } // end loop through all processes in ready queue
+            } // end of ready queue adding processes to running
 
             if(!running.isEmpty()){
 
-                    for(int g = 0; g < running.size(); g++){
+                toBeRemoved = chooseEviction(blocks, running, currentVtu, finished);
+                removePart(blocks, toBeRemoved);
 
-                        if(running.get(g).getEnd() == currentVtu){
-
-                            removePart(blocks, g); // TODO again, what to put for the loc?????
-                            finished.add(running.get(g));
-                            running.remove(g);
-                        }
-                    } // end for
-            } // end RUNNING if
-
-
-
-
-
-
-            } // end of ready queue adding processes to running
-
-
-
-
-
-
-
-
-
-
+                } // end RUNNING if
 
 
 
