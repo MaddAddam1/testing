@@ -28,13 +28,10 @@ public class phasei {
     public static double averageOccupied = 0, averageMemoryHoleSize = 0, averageTurnaroundTime = 0,
             averageWaitingTime = 0, averageProcessingTime = 0;
 
-
-    // current process ID
-    public static int currentPid = 0;
     // time when a new process has completed its wait time and is ready for allocation
     public static int timeWhenProcessArrived = 0;
     // tracking the number of total rejected processes, is cumulative throughout the 6000 cycles
-    public static int rejectedProcesses = 0, holesInMemory = 1, partitions = 0, holes = 1;
+    public static int rejectedProcesses = 0, holesInMemory = 1;
     // used in calculating the average stats
     public static int avgWait = 0, avgTurn = 0, avgProcess = 0;
 
@@ -164,8 +161,6 @@ public class phasei {
                 //blocks.insertElementAt(new MemBlock(size,false), loc); //changed from vector
                 MemBlock c = new MemBlock(holeSize, true);
                 blocks.add(loc + 1, c);     // replacing original block
-                blocks.get(loc + 1).makeHole();
-
             }
 
             return true;
@@ -208,8 +203,6 @@ public class phasei {
         } // end of removePart()
 
 
-
-
     public static void printStats(int b, ArrayList<MemBlock> blocks){
 
         if(b == 5000){
@@ -218,12 +211,10 @@ public class phasei {
                 avgProcess += finished.get(r).getProcessTime();
                 avgTurn += (finished.get(r).getArrivalDelay() + finished.get(r).getProcessTime());
             }
-            averageProcessingTime = avgProcess / (finished.size()+1);
-            averageTurnaroundTime = avgTurn / (finished.size()+1);
-            averageWaitingTime = avgWait / (finished.size()+1);
+            averageProcessingTime = avgProcess / (finished.size());
+            averageTurnaroundTime = avgTurn / (finished.size());
+            averageWaitingTime = avgWait / (finished.size());
         }
-
-
 
 //********************************************************** IF statements for printing STATS ************************************************************
         // the necessary code to calculate the number of occupied blocks and their average sizes
@@ -249,6 +240,7 @@ public class phasei {
             for(int q = 0; q < blocks.size(); q++){ // calculating AVG size of the holes in MEMORY
                 if(blocks.get(q).isHole()){
                     hh += blocks.get(q).getSize();
+                    holes++;
                 }
             }
             if(holes > 0) {
@@ -285,10 +277,7 @@ public class phasei {
             System.out.println("\nNumber of total rejected jobs between 4000-5000 VTUs: " + finished.size() + "\n");
         }
 
-
-
     } // end printStats method
-
 
         /**
          * worstFit() returns the biggest hole it can find.
@@ -320,24 +309,90 @@ public class phasei {
             return loc;
         } // end of worstFit()
 
+    /**
+     * worstFit() returns the biggest hole it can find.
+     * If a big enough one does not exist, it evicts partitions until
+     * one does.
+     * <p>
+     * R/O size:    Size of partition to create
+     * R/W blocks:  Entire list of blocks
+     * GLOBAL:  nchecks stores number of blocks examined
+     */
+    public static int firstFit(int size, ArrayList<MemBlock> blocks) {
+        MemBlock b;
+        int loc = 999;
+
+        // search current holes for the first one that's big enough
+        for (int i = 0; i < blocks.size(); i++) {
+            b = blocks.get(i);
+            if (b.isHole()) {
+                nchecks++;
+
+                if (b.getSize() >= size) {
+                    loc = i;
+                    break;
+                }
+            }
+
+        }
+
+        return loc;
+    } // end of firstFit()
+
+    /**
+     * worstFit() returns the biggest hole it can find.
+     * If a big enough one does not exist, it evicts partitions until
+     * one does.
+     * <p>
+     * R/O size:    Size of partition to create
+     * R/W blocks:  Entire list of blocks
+     * GLOBAL:  nchecks stores number of blocks examined
+     */
+    public static int bestFit(int size, ArrayList<MemBlock> blocks) {
+        MemBlock b;
+        int loc = 999;
+        int best = -1;
+        int smallest = -1;
+        int inc = 0;
+
+        // search current holes for biggest
+        for (int i = 0; i < blocks.size(); i++) {
+            b = blocks.get(i);
+            if (b.isHole()) {
+                nchecks++;
+
+                if (b.getSize() >= size && (smallest == -1 || b.getSize() < smallest)) {
+
+                    loc = i;
+                    smallest = b.getSize();
+////////////////////////////////////////////////////////
+
+
+
+////////////////////////////////////////////////////////
+
+                    //loc = i;
+                }
+
+            }
+
+        } // end for loop searching through blocks of MemBlocks
+
+        return loc;
+    } // end of bestFit()
+
 //******************************************** END MEM BLOCK STUFF ****************************************************************************************************
 
     public static void main(String[] args) {
 
         ArrayList<MemBlock> blocks = new ArrayList<>();
-        int hole;
-        int time;
-        int size;
-
-
-        ArrayList<ArrayList<Integer>> main = new ArrayList<>();
-        main.add(new ArrayList<Integer>(2));        // first index size of hole, second is pid
+        int hole, readySize;
 
         blocks.add(new MemBlock(MEM_SIZE,true));
 
-
         int vtu = 0;
         int processSize, processTime, processSizeIndex, processTimeIndex, processArrival;
+//************************************************** Creating Processes and their associated info **************************************************
 
         while (vtu < 4000) {  // could move into main loop and do each loop
 
@@ -352,10 +407,7 @@ public class phasei {
 
         vtu++;
         }
-//******************************************************** END PROCESS CREATION ************************************************************
-
-        int readySize, toBeRemoved;
-
+//******************************************************** START MAIN SIMULATION FOR 6000 VTUS ************************************************************
 
         while(currentVtu < MAX_VTUS) {
 
@@ -376,7 +428,7 @@ public class phasei {
                 for (int i = 0; i < readyQueue.size(); i++) { // run through all processes in the ready queue
 
                     readySize = readyQueue.get(i).getProcessSize();
-                    hole = worstFit(readySize, blocks);
+                    hole = bestFit(readySize, blocks);
 
                     if (hole == 999) {
                         readyQueue.remove(i);
@@ -386,17 +438,9 @@ public class phasei {
                         insertPart(readySize, blocks, hole); // inserting partition of process size into main block of memory
                         running.add(readyQueue.get(i));
                         readyQueue.remove(i);
-
                     }
-
-
-                    // TODO getting the right value for loc variable very important -- hole is the index location of the worst hole
-                    // TODO have to check for space, if there's any, rejecting process
-
-
                 } // end loop through all processes in ready queue
             } // end of ready queue adding processes to running
-
 
             if(running.size() > 0) {
 
@@ -404,30 +448,23 @@ public class phasei {
 
                     if (running.get(v).getEnd() == currentVtu) {
 
-
                         for (int g = 0; g < blocks.size(); g++) {
 
                             if (blocks.get(g).isPart() && (running.get(v).getProcessSize() == blocks.get(g).getSize())) {
 
                                 removePart(blocks, g);
                                 finished.add(running.get(v));
-
                             }
-                        }
+                        }                                   /////// Dont know if tracking & keeping total memory under 1750 or not ***********************
                         running.remove(v);
-                    }
-
+                    }                               // TODO: CALCULATE EXTERNAL FRAG IN BYTES !!!!!!!!!!!!!!!!!! **************************************
                 } // end RUNNING loop
-
             }
 
         printStats(currentVtu, blocks);
-
-
         currentVtu++;
 
         } // end OUTER MOST WHILE //********************************************************
-
 
     } // end main
 
