@@ -28,7 +28,7 @@ public class RoundRobin {
         public static ArrayList<Process> pending = new ArrayList<>(100);
 
 
-        public static int nchecks, currentVtu, occupiedBlocks;
+        public static int nchecks, currentVtu = 0, occupiedBlocks;
 
         public static int externalFrag = 0; // TODO **************************************************
 
@@ -41,15 +41,15 @@ public class RoundRobin {
         // tracking the number of total rejected processes, is cumulative throughout the 6000 cycles
         public static int rejectedProcesses = 0;
         // used in calculating the average stats
-        public static int avgWait = 0, avgTurn = 0, avgProcess = 0;
+        public static int totalWaitTimes = 0, totalTurnaroundTimes = 0, totalProcessTimes = 0;
 
 ////*********************************************************** Class Process *************************************************************************************************
         static class Process{
 
-            int pid, processSize, processTime, arrivalDelay, start, end;
+            int pid, processSize, processTime, arrivalDelay, start, end, initialProcessTime, elapsedTime;
 
             public Process(int pid, int processSize, int processTime, int arrivalDelay,
-                           int start, int end){
+                           int start, int end, int initialProcessTime, int elapsedTime){
 
                 this.pid = pid;
                 this.processSize = processSize;
@@ -57,7 +57,8 @@ public class RoundRobin {
                 this.arrivalDelay = arrivalDelay;
                 this.start = start;
                 this.end = end;
-
+                this.initialProcessTime = initialProcessTime;
+                this.elapsedTime = elapsedTime;
 
             } // end Process method
 
@@ -83,6 +84,14 @@ public class RoundRobin {
             public int getEnd() {
                 return end;
             }
+            public int getInitialProcessTime() {
+                return initialProcessTime;
+            }
+            public int getElapsedTime(){
+                return elapsedTime;
+
+            }
+
 
         } // end class process
 
@@ -90,16 +99,18 @@ public class RoundRobin {
 
 
         /**
-         * Class MemBlock keeps track of a block of pages.  It may represent
+         * Class MemoryBlock keeps track of a block of pages.  It may represent
          * either a hole or a partition.
          */
-        static class MemBlock {
+        static class MemoryBlock {
             private boolean hole;
             private int size;
+            private int pid;
 
-            public MemBlock(int s, boolean h) { //mem block size should be the process size
+            public MemoryBlock(int s, boolean h, int id) { //mem block size should be the process size
                 size = s;
                 hole = h;
+                pid = id;
             }
 
             public boolean isHole() {
@@ -125,6 +136,13 @@ public class RoundRobin {
             public void makePart() {
                 hole = false;
             }
+            public int getPid() {
+                return pid;
+            }
+            public void setPid(int id) {
+                pid = id;
+            }
+
         }
 
         /**
@@ -140,14 +158,15 @@ public class RoundRobin {
          * Return value:  T/F was partition inserted?
          *
          */
-        public static boolean insertPart(int size, ArrayList<MemBlock> blocks, // size is process size, blocks are collections
-                                         int loc) {                     // of memory blocks, which are collections of pages
-            MemBlock b = blocks.get(loc);                             // pages = like 1 for each hk size, so 50kb = mem block of 50 pages
+        public static boolean insertPart(int size, ArrayList<MemoryBlock> blocks, // size is process size, blocks are collections
+                                         int loc, ArrayList<Process> ready, int i) {                     // of memory blocks, which are collections of pages
+            MemoryBlock b = blocks.get(loc);                             // pages = like 1 for each hk size, so 50kb = mem block of 50 pages
             int newHoleLoc, holeSize;
 
             if (b.getSize() == size) {
                 // partition fits exactly
                 b.makePart();
+                b.setPid(ready.get(i).getPid());
 
             } else {
                 // extra hole left over
@@ -156,10 +175,11 @@ public class RoundRobin {
                 b.setSize(size);
                 b.makePart();
                 //b.makePart();
-                //blocks.insertElementAt(new MemBlock(size,false), loc); //changed from vector
-                MemBlock c = new MemBlock(holeSize, true);
+                //blocks.insertElementAt(new MemoryBlock(size,false), loc); //changed from vector
+                MemoryBlock c = new MemoryBlock(holeSize, true, -1);
                 blocks.add(loc + 1, c);     // replacing original block
             }
+            //coalesce(blocks, loc);
 
             return true;
         } // end of insertPart()
@@ -174,18 +194,15 @@ public class RoundRobin {
          *
          * @returns new location (after consolidating holes)
          */
-        public static void removePart(ArrayList<MemBlock> blocks, int loc) { // just remove process from slot and try to put job in before coalesce
-            MemBlock b = blocks.get(loc);
+        public static int removePart(ArrayList<MemoryBlock> blocks, int loc) { // just remove process from slot and try to put job in before coalesce
+            MemoryBlock b = blocks.get(loc);
+
+
 
             b.makeHole();
-        }
-
-        public static void coalesce(ArrayList<MemBlock> blocks, int loc){ // coalesce on the most recent vacated memory slot
-
-            MemBlock b = blocks.get(loc);
 
             if (loc > 0) {
-                MemBlock bPrev = blocks.get(loc - 1);
+                MemoryBlock bPrev = blocks.get(loc - 1);
 
                 if (bPrev.isHole()) {
                     b.setSize(b.getSize() + bPrev.getSize());
@@ -194,7 +211,32 @@ public class RoundRobin {
                 }
             }
             if (loc < blocks.size() - 1) {
-                MemBlock bNext = blocks.get(loc + 1);
+                MemoryBlock bNext = blocks.get(loc + 1);
+
+                if (bNext.isHole()) {
+                    b.setSize(b.getSize() + bNext.getSize());
+                    blocks.remove(loc + 1);
+
+                }
+            }
+            return loc;
+        } // end of removePart()
+
+        public static void coalesce(ArrayList<MemoryBlock> blocks, int loc){ // coalesce on the most recent vacated memory slot
+
+            MemoryBlock b = blocks.get(loc);
+
+            if (loc > 0) {
+                MemoryBlock bPrev = blocks.get(loc - 1);
+
+                if (bPrev.isHole()) {
+                    b.setSize(b.getSize() + bPrev.getSize());
+                    blocks.remove(loc - 1);
+                    loc--;
+                }
+            }
+            if (loc < blocks.size() - 1) {
+                MemoryBlock bNext = blocks.get(loc + 1);
 
                 if (bNext.isHole()) {
                     b.setSize(b.getSize() + bNext.getSize());
@@ -204,9 +246,9 @@ public class RoundRobin {
             }
         } // end of coalesce()
 
-        public static void compaction(ArrayList<MemBlock> blocks){
+        public static void compaction(ArrayList<MemoryBlock> blocks){
             int numHoles = 0, numPart = 0;
-            ArrayList<MemBlock> aliveIndices = new ArrayList<>();
+            ArrayList<MemoryBlock> aliveIndices = new ArrayList<MemoryBlock>();
 
             for(int i = 0; i < blocks.size(); i++){
 
@@ -219,7 +261,7 @@ public class RoundRobin {
             for(int i = 0; i < aliveIndices.size(); i++){ // moving all partitions to the beginning of memory
 
                 blocks.get(i).setSize(aliveIndices.get(i).getSize());
-                blocks.get(i).makePart();
+                //blocks.get(i).makePart();
 
             }
 
@@ -232,17 +274,17 @@ public class RoundRobin {
         }
 
 
-        public static void printStats(int b, ArrayList<MemBlock> blocks){
+        public static void printStats(int b, ArrayList<MemoryBlock> blocks){
 
             if(b == 5000){
                 for (int r = 0; r < finished.size(); r++) { // for loop calculating average wait, turnaround, and process times
-                    avgWait += finished.get(r).getArrivalDelay();
-                    avgProcess += finished.get(r).getProcessTime();
-                    avgTurn += (finished.get(r).getArrivalDelay() + finished.get(r).getProcessTime());
+                    totalWaitTimes += finished.get(r).getArrivalDelay();
+                    totalProcessTimes += finished.get(r).getProcessTime();
+                    totalTurnaroundTimes += (finished.get(r).getArrivalDelay() + finished.get(r).getProcessTime());
                 }
-                averageProcessingTime = avgProcess / (finished.size());
-                averageTurnaroundTime = avgTurn / (finished.size());
-                averageWaitingTime = avgWait / (finished.size());
+                averageProcessingTime = totalProcessTimes / (finished.size());
+                averageTurnaroundTime = totalTurnaroundTimes / (finished.size());
+                averageWaitingTime = totalWaitTimes / (finished.size());
             }
 
 //********************************************************** IF statements for printing STATS ************************************************************
@@ -288,23 +330,6 @@ public class RoundRobin {
                 System.out.println("\nAverage waiting time for all processes: " + averageWaitingTime);
                 System.out.println("\nAverage processing time for all processes: " + averageProcessingTime + "\n");
             }
-            // rejected jobs between 1000-5000 VTUs -- cumulative, adds them up and shows total every 1000 VTUs, not just the number between that specific range
-            if (b == 2000) {
-                System.out.println("\nCurrent VTU cycle is: " + b);
-                System.out.println("\nNumber of total rejected jobs between 1000-2000 VTUs: " + finished.size() + "\n");
-            }
-            if (b == 3000) {
-                System.out.println("\nCurrent VTU cycle is: " + b);
-                System.out.println("\nNumber of total rejected jobs between 2000-3000 VTUs: " + finished.size() + "\n");
-            }
-            if (b == 4000) {
-                System.out.println("\nCurrent VTU cycle is: " + b);
-                System.out.println("\nNumber of total rejected jobs between 3000-4000 VTUs: " + finished.size() + "\n");
-            }
-            if (b == 5000) {
-                System.out.println("\nCurrent VTU cycle is: " + b);
-                System.out.println("\nNumber of total rejected jobs between 4000-5000 VTUs: " + finished.size() + "\n");
-            }
 
         } // end printStats method
 
@@ -318,8 +343,8 @@ public class RoundRobin {
      * R/W blocks:  Entire list of blocks
      * GLOBAL:  nchecks stores number of blocks examined
      */
-    public static int worstFit(int size, ArrayList<MemBlock> blocks) {
-        MemBlock b;
+    public static int worstFit(int size, ArrayList<MemoryBlock> blocks) {
+        MemoryBlock b;
         int loc = 999;
         int maxSize = 0;
 
@@ -346,8 +371,8 @@ public class RoundRobin {
      * R/W blocks:  Entire list of blocks
      * GLOBAL:  nchecks stores number of blocks examined
      */
-    public static int firstFit(int size, ArrayList<MemBlock> blocks) {
-        MemBlock b;
+    public static int firstFit(int size, ArrayList<MemoryBlock> blocks) {
+        MemoryBlock b;
         int loc = 999;
 
         // search current holes for the first one that's big enough
@@ -374,8 +399,8 @@ public class RoundRobin {
      * R/W blocks:  Entire list of blocks
      * GLOBAL:  nchecks stores number of blocks examined
      */
-    public static int bestFit(int size, ArrayList<MemBlock> blocks) {
-        MemBlock b;
+    public static int bestFit(int size, ArrayList<MemoryBlock> blocks) {
+        MemoryBlock b;
         int loc = 999;
         int best = -1;
         int smallest = -1;
@@ -399,64 +424,149 @@ public class RoundRobin {
     } // end of bestFit()
 //******************************************************** END FITTING ALGORITHMS ************************************************************************************
 
+    public static void tryInsert(ArrayList<MemoryBlock> blocks, ArrayList<Process> pending, ArrayList<Process> readyQueue, ArrayList<Process> running, int currentVtu){
+
+        int readySize, hole;
+
+        if(pending.size() > 0) { // run through pending list first since it has priority over jobs in the ready queue
+
+            for (int h = 0; h < pending.size(); h++) {
+
+                readySize = pending.get(h).getProcessSize();
+                hole = worstFit(readySize, blocks);
+
+                if (hole != 999) {
+                    insertPart(readySize, blocks, hole, pending, h); // inserting partition of process size into main block of memory
+                    pending.get(h).start = currentVtu;
+                    //pending.get(h).end = (currentVtu + pending.get(h).getProcessTime());
+                    running.add(pending.get(h));
+                    pending.remove(h);
+
+                } else {
+
+                    // TODO: Try again after coalesce
+                   // coalesce(blocks, hole);
+                 //   hole = worstFit(readySize, blocks);
+                   // insertPart(readySize, blocks, hole);
+
+                    // TODO: Try again after compaction
+                    compaction(blocks);
+                    hole = worstFit(readySize, blocks);
+                    insertPart(readySize, blocks, hole, pending, h);
+                }
+            }
+        } // end pending list check
+
+        if(readyQueue.size() > 0) {
+
+            for (int b = 0; b < readyQueue.size(); b++) {
+
+                readySize = readyQueue.get(b).getProcessSize();
+                hole = worstFit(readySize, blocks);
+
+
+                if (hole != 999) {
+
+                    insertPart(readySize, blocks, hole, readyQueue, b); // inserting partition of process size into main block of memory
+                    readyQueue.get(b).start = currentVtu;
+                    //readyQueue.get(b).end = (currentVtu + readyQueue.get(b).getProcessTime());
+                    running.add(readyQueue.get(b));
+                    readyQueue.remove(b);
+
+                } else {
+
+                    pending.add(readyQueue.get(b));
+                    readyQueue.remove(b);
+
+                }
+            }
+        } // end ready queue check for jobs.
+    }
+
 //******************************************** START of MAIN METHOD ****************************************************************************************************
 
-        public static void main(String[] args) {
+    public static void main(String[] args) {
 
-            ArrayList<MemBlock> blocks = new ArrayList<>();
-            blocks.add(new MemBlock(MEM_SIZE,true));
+        ArrayList<MemoryBlock> blocks = new ArrayList<>();
+        int hole, readySize;
 
-            int vtu = 0;
-            int processSize, processTime, processSizeIndex, processTimeIndex, processArrival;
+        blocks.add(new MemoryBlock(MEM_SIZE,true, -1));
 
+        int vtu = 0;
+        int processSize, processTime, processSizeIndex, processTimeIndex, processArrival;
 //************************************************** Creating Processes and their associated info **************************************************
 
-            while (vtu < 4000) {  // could move into main loop and do each loop
+        while (vtu < 4000) {  // could move into main loop and do each loop
 
-                processSizeIndex = randomizer.nextInt(PROCESS_MEMORY_SIZES.length);
-                processSize = PROCESS_MEMORY_SIZES[processSizeIndex];
+            processSizeIndex = randomizer.nextInt(PROCESS_MEMORY_SIZES.length);
+            processSize = PROCESS_MEMORY_SIZES[processSizeIndex];
 
-                processTimeIndex = randomizer.nextInt(PROCESS_EXECUTION_TIMES.length);
-                processTime = PROCESS_EXECUTION_TIMES[processTimeIndex];
-                processArrival = 1 + (int)(Math.random() * ((10 - 1) + 1));
+            processTimeIndex = randomizer.nextInt(PROCESS_EXECUTION_TIMES.length);
+            processTime = PROCESS_EXECUTION_TIMES[processTimeIndex];
+            processArrival = 1 + (int)(Math.random() * ((10 - 1) + 1));
 
-                processList.add(new Process(vtu, processSize, processTime, processArrival, 0, 0));
+            processList.add(new Process(vtu, processSize, processTime, processArrival, 0, 0, processTime, 0));
 
-                vtu++;
+            vtu++;
+        }
+//******************************************************** START MAIN SIMULATION FOR 6000 VTUS ************************************************************
+
+        while(currentVtu < MAX_VTUS) {
+
+            // loading up the ready queue
+            if (processList.get(0).getArrivalDelay() == currentVtu - timeWhenProcessArrived) {
+
+                readyQueue.add(processList.get(0));
+                //readyQueue.get(readyQueue.size() - 1).start = currentVtu;
+                //readyQueue.get(readyQueue.size() - 1).end = currentVtu + readyQueue.get(readyQueue.size() - 1).processTime;
+                timeWhenProcessArrived = currentVtu;
+                processList.remove(0);
             }
-//******************************************************** START MAIN SIMULATION FOR 6000 VTUs, USING RR-SCHEDULING OF 5 VTUs ************************************************************
-
-            int readySize, hole;
-            while(currentVtu < MAX_VTUS) {
-
-                // loading up the ready queue
-                if (processList.get(0).getArrivalDelay() == currentVtu - timeWhenProcessArrived) {
-
-                    readyQueue.add(processList.get(0));
-                    readyQueue.get(readyQueue.size() - 1).start = currentVtu;
-                    readyQueue.get(readyQueue.size() - 1).end = currentVtu + readyQueue.get(readyQueue.size() - 1).processTime;
-                    timeWhenProcessArrived = currentVtu;
-                    processList.remove(0);
-                }
 
             //********************************************** Ready Queue is loaded with processes, now try and stick them in memory *******************************************
+
+                //tryInsert(blocks, pending, readyQueue, running, currentVtu); // initial insertion attempt
+
+                //int readySize, hole;
 
                 if(pending.size() > 0) { // run through pending list first since it has priority over jobs in the ready queue
 
                     for (int h = 0; h < pending.size(); h++) {
 
                         readySize = pending.get(h).getProcessSize();
-                        hole = worstFit(readySize, blocks);
+                        hole = firstFit(readySize, blocks);
 
-                        if (hole == 999) {
-                            continue;
+                        if (hole != 999) {
+                            insertPart(readySize, blocks, hole, pending, h); // inserting partition of process size into main block of memory
 
-                        } else {
-                            insertPart(readySize, blocks, hole); // inserting partition of process size into main block of memory
+                            if(pending.get(h).getElapsedTime() == 0) {
+                                pending.get(h).start = currentVtu;          // first time running
+                            }
+
+                            //pending.get(h).end = (currentVtu + pending.get(h).getProcessTime());
                             running.add(pending.get(h));
-                            pending.remove(h);
+                            //pending.remove(h);
+
                         }
+
+                                        /*else {
+                                            continue;
+
+                                            // TODO: Try again after coalesce
+                                            // coalesce(blocks, hole);
+                                            //   hole = worstFit(readySize, blocks);
+                                            // insertPart(readySize, blocks, hole);
+
+                                            // TODO: Try again after compaction
+                                            //compaction(blocks);
+                                            //hole = worstFit(readySize, blocks);
+                                            //insertPart(readySize, blocks, hole);
+                                        }
+                                        */
+
+                        pending.remove(h);
                     }
+
                 } // end pending list check
 
                 if(readyQueue.size() > 0) {
@@ -464,21 +574,37 @@ public class RoundRobin {
                     for (int b = 0; b < readyQueue.size(); b++) {
 
                         readySize = readyQueue.get(b).getProcessSize();
-                        hole = worstFit(readySize, blocks);
+                        hole = firstFit(readySize, blocks);
 
-                        if (hole == 999) {
 
-                            pending.add(readyQueue.get(b));
-                            readyQueue.remove(b);
+                        if (hole != 999) {
 
-                        } else {
-                            insertPart(readySize, blocks, hole); // inserting partition of process size into main block of memory
+                            insertPart(readySize, blocks, hole, readyQueue, b); // inserting partition of process size into main block of memory
+                            readyQueue.get(b).start = currentVtu;
+                            //readyQueue.get(b).end = (currentVtu + readyQueue.get(b).getProcessTime());
                             running.add(readyQueue.get(b));
-                            readyQueue.remove(b);
+                            //readyQueue.remove(b);
+
                         }
+
+                        pending.add(readyQueue.get(b));
+                        readyQueue.remove(b);
                     }
                 } // end ready queue check for jobs.
 
+/////////////////////////////////////////////////////////////////////////////////////////
+            if (currentVtu % 20 == 0){
+                int i = 0;
+                System.out.println("----------->>>>>>    " + running.size());
+                if(running.size() > 0) {
+                    Process temp = running.get(i);
+                    int temp2 = pending.size();
+                    System.out.println(temp.getElapsedTime());
+                    System.out.println("Pending " + temp);
+                    i++;
+                }
+            }
+////////////////////////////////////////////////////////////////////////////////////////
                 // **************************************** Done with initial insertions **************************************************
 
                 // TODO: try and put job in memory after a process terminates. If no fit, coalesce memory and try again, if still not, run compaction
@@ -487,36 +613,95 @@ public class RoundRobin {
 
                 // TODO ************ ----->>>>>>> Make sure and decrement the PROCESS EXECUTION TIME if it doesnt finish bc of the RR
 
+                // TODO: Make sure to have end time logic correct
+
                 //****************************** Now check RUNNING processes for expiration OR for RR conditions ****************************
 
                 if(running.size() > 0){
 
-                    for(int m = 0; m < running.size(); m++){
+                    for(int m = 0; m < running.size(); m++) {
 
-                        if (running.get(m).getEnd() == currentVtu) { // if the process is expiring right now, remove it, free memory, and add to finished list
+                        // if a process is expiring, do all this
+                        if (running.get(m).getProcessTime() == running.get(m).getElapsedTime()) { // if the process is expiring right now, remove it, free memory, and add to finished list
 
                             for (int g = 0; g < blocks.size(); g++) {
+
+                                if (blocks.get(g).isPart() && (running.get(m).getProcessSize() == blocks.get(g).getSize())) { //
+
+                                    removePart(blocks, g);
+                                    running.get(m).end = currentVtu;
+
+                                    //running.remove(m);
+
+                                    /*
+                                    // TODO: as soon as process is removed, try and fill the hole
+                                    tryInsert(blocks, pending, readyQueue, running, currentVtu);
+
+                                    // TODO: Try again after coalesce
+                                    coalesce(blocks, g);
+                                    tryInsert(blocks, pending, readyQueue, running, currentVtu);
+
+                                    // TODO: Try again after compaction
+                                    compaction(blocks);
+                                    tryInsert(blocks, pending, readyQueue, running, currentVtu);
+                                    */
+                                }
+                            }
+
+
+                        } // finish expiration check
+                        finished.add(running.get(m));
+                        running.remove(m);
+                    } // end first check of ALL running processes for expirations
+
+                    for(int m = 0; m < running.size(); m++){
+
+                        if(running.get(m).getStart() + ROUND_ROBIN == currentVtu){ // Round Robin checking
+
+
+                            for (int g = 0; g < blocks.size(); g++) { // find ejected process' corresponding memory block
 
                                 if (blocks.get(g).isPart() && (running.get(m).getProcessSize() == blocks.get(g).getSize())) {
 
                                     removePart(blocks, g);
-                                    finished.add(running.get(m));
+
+                                    /*
+                                    // TODO: as soon as process is removed, try and fill the hole
+                                    tryInsert(blocks, pending, readyQueue, running, currentVtu);
+
+                                    // TODO: Try again after coalesce
+                                    coalesce(blocks, g);
+                                    tryInsert(blocks, pending, readyQueue, running, currentVtu);
+
+                                    // TODO: Try again after compaction
+                                    compaction(blocks);
+                                    tryInsert(blocks, pending, readyQueue, running, currentVtu);
+                                    */
                                 }
                             }
-                            running.remove(m);
-                        }
+
+                        } // end RR checking
+
+                    //running.get(m).processTime = (running.get(m).processTime - ROUND_ROBIN); // Subtract the five seconds from its process time due to RR scheduling
+
+                        running.get(m).elapsedTime += 5;
+                        pending.add(running.get(m)); // move the process over to pending if it can't finish
+                        running.remove(m);
+
+                    } // end second loop checking ALL running processes for evictions due to RR
 
 
-                    }
-
-
-                }
+                } // end running list check for expirations and memory allocations based on the 3 criteria: 1. process can fit in newly freed space, 2. process can fit
+                  // in coalesced space around latest memory hole, 3. process can fit after compaction of memory --> if can't fit after trying these, send back to pending
 
 
                 printStats(currentVtu, blocks);
                 currentVtu++;
 
+
             } // end OUTER MOST WHILE //********************************************************
+
+            System.out.println(finished.size());
 
         } // end main
 

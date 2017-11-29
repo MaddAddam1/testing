@@ -1,4 +1,4 @@
-import javax.lang.model.type.ArrayType;
+
 import java.util.*;
 public class phasei {
 
@@ -83,7 +83,7 @@ public class phasei {
 //********************************************************************************************************************************************
 
         /**
-         * Class MemBlock keeps track of a block of pages.  It may represent
+         * Class MemoryBlock keeps track of a block of pages.  It may represent
          * either a hole or a partition.
          */
         static class MemBlock {
@@ -149,7 +149,7 @@ public class phasei {
                 b.setSize(size);
                 b.makePart();
                 //b.makePart();
-                //blocks.insertElementAt(new MemBlock(size,false), loc); //changed from vector
+                //blocks.insertElementAt(new MemoryBlock(size,false), loc); //changed from vector
                 MemBlock c = new MemBlock(holeSize, true);
                 blocks.add(loc + 1, c);     // replacing original block
             }
@@ -397,6 +397,7 @@ public class phasei {
                 timeWhenProcessArrived = currentVtu;
                 processList.remove(0);
             }
+
 
             // loading into memory if space, rejecting process if not
 
