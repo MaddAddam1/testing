@@ -6,6 +6,7 @@ public class phasei {
     public static Random randomizer = new Random();
     // MAX cpu cycles possible is 6000 VTUs
     public static final int MAX_VTUS = 6000;
+    public static final int MEM_SIZE = 1750;
 
     //Array of possible memory sizes, will use the randomizer to choose an index/value from this array to serve as the random process' size
     public static final int[] PROCESS_MEMORY_SIZES = {50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160, 170, 180, 190,
@@ -81,16 +82,6 @@ public class phasei {
 
 //********************************************************************************************************************************************
 
-
-        // constant definitions
-        static final int MEM_SIZE = 1750;
-        static final int WARMUP_STEPS = 1000;
-        static final int EXPERIMENT_STEPS = 6000;
-
-        // global fields
-        private static Random rand = new Random();
-
-
         /**
          * Class MemBlock keeps track of a block of pages.  It may represent
          * either a hole or a partition.
@@ -165,7 +156,6 @@ public class phasei {
 
             return true;
         } // end of insertPart()
-
 
         /**
          * removePart() removes a partition.  If there is a hole on either side,
@@ -303,9 +293,7 @@ public class phasei {
                         loc = i;
                     }
                 }
-
             }
-
             return loc;
         } // end of worstFit()
 
@@ -333,9 +321,7 @@ public class phasei {
                     break;
                 }
             }
-
         }
-
         return loc;
     } // end of firstFit()
 
@@ -365,17 +351,8 @@ public class phasei {
 
                     loc = i;
                     smallest = b.getSize();
-////////////////////////////////////////////////////////
-
-
-
-////////////////////////////////////////////////////////
-
-                    //loc = i;
                 }
-
             }
-
         } // end for loop searching through blocks of MemBlocks
 
         return loc;
@@ -428,7 +405,7 @@ public class phasei {
                 for (int i = 0; i < readyQueue.size(); i++) { // run through all processes in the ready queue
 
                     readySize = readyQueue.get(i).getProcessSize();
-                    hole = bestFit(readySize, blocks);
+                    hole = worstFit(readySize, blocks);
 
                     if (hole == 999) {
                         readyQueue.remove(i);
@@ -469,3 +446,11 @@ public class phasei {
     } // end main
 
 } // end phasei class
+
+
+/*
+RR - let's the FIFO process in the ready queue execute for 5 vtus before moving on to the next one, looping back to the front
+Have a second ready queue that unfinished processes get sent to I guess
+
+
+ */
