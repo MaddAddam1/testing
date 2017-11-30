@@ -12,6 +12,9 @@ public class lastResort {
 
         public static final int ROUND_ROBIN = 5;
 
+        public static boolean roomInMemoryPending, roomInMemoryReady = true;
+        public static boolean runningFlag = false;
+
         //Array of possible memory sizes, will use the randomizer to choose an index/value from this array to serve as the random process' size
         public static final int[] PROCESS_MEMORY_SIZES = {50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160, 170, 180, 190,
                 200, 210, 220, 230, 240, 250, 260, 270, 280, 290, 300};
@@ -181,32 +184,73 @@ public class lastResort {
          *
          * @returns new location (after consolidating holes)
          */
-        public static int removePart(ArrayList<MemBlock> blocks, int loc) { // loc is an index value indicator for vector location
-            MemBlock b = blocks.get(loc);
+    public static int removePart(ArrayList<MemBlock> blocks, int loc, ArrayList<Process> running,
+                                     ArrayList<Process> pending, ArrayList<Process> ready, int vtu) { // loc is an index value indicator for vector location
+        MemBlock b = blocks.get(loc);
 
-            b.makeHole();
+        b.makeHole();
 
-            if (loc > 0) {
-                MemBlock bPrev = blocks.get(loc - 1);
-
-                if (bPrev.isHole()) {
-                    b.setSize(b.getSize() + bPrev.getSize());
-                    blocks.remove(loc - 1);
-                    loc--;
-                }
-            }
-            if (loc < blocks.size() - 1) {
-                MemBlock bNext = blocks.get(loc + 1);
-
-                if (bNext.isHole()) {
-                    b.setSize(b.getSize() + bNext.getSize());
-                    blocks.remove(loc + 1);
-
-                }
-            }
-            return loc;
+        return loc;
         } // end of removePart()
 
+    public static int coalesce(ArrayList<MemBlock> blocks, int loc) { // loc is an index value indicator for vector location
+        MemBlock b = blocks.get(loc);
+
+        b.makeHole();
+        if (loc > 0) {
+            MemBlock prevBlock = blocks.get(loc - 1);
+
+            if (prevBlock.isHole()) {
+                b.setSize(b.getSize() + prevBlock.getSize());
+                blocks.remove(loc - 1);
+                loc--;
+            }
+        }
+        if (loc < blocks.size() - 1) {
+            MemBlock nextBlock = blocks.get(loc + 1);
+
+            if (nextBlock.isHole()) {
+                b.setSize(b.getSize() + nextBlock.getSize());
+                blocks.remove(loc + 1);
+
+            }
+        }
+
+        return loc;
+    } // end of removePart()
+
+/**
+ * Compaction method
+ *
+ * Takes all active processes and moves them all to the left side of memory (the array) and joins together all
+ * holes in memory into a single block to the right of the last process block in memory.
+ *
+ * */
+    public static void compaction(ArrayList<MemBlock> blocks){ // dont make one big chunk, but just make all holes of whatever size left them
+        int numHoles = 0, numPart = 0;
+        ArrayList<MemBlock> aliveIndices = new ArrayList<MemBlock>();
+
+        for(int i = 0; i < blocks.size(); i++){
+
+            if(blocks.get(i).isPart()){
+                numPart++;
+                aliveIndices.add(blocks.get(i)); // adding index location of partitions in blocks to array.
+            }
+        } // at this point, have my blocks unaltered and a new list of partition MemBlocks
+
+        for(int j = 0; j < aliveIndices.size(); j++){ // moving all partitions to the beginning of memory
+
+            blocks.get(j).setSize(aliveIndices.get(j).getSize());
+            blocks.get(j).makePart();
+
+        }
+
+        for (int k = numPart - 1; k < blocks.size(); k++){
+
+            blocks.get(k).makeHole();
+        }
+
+    }
 
         public static void printStats(int b, ArrayList<MemBlock> blocks, ArrayList<Process> finished){
 
@@ -297,36 +341,42 @@ public class lastResort {
         } // end of worstFit()
 
 //******************************************************** END FITTING ALGORITHMS ************************************************************************************
-public static void checkPending(ArrayList<MemBlock> blocks, ArrayList<Process> pending, ArrayList<Process> running, int vtu){
+    public static void checkPending(ArrayList<MemBlock> blocks, ArrayList<Process> pending, ArrayList<Process> running, int vtu){
 
-    int readySize, hole;
-    if(pending.size() > 0){
+        int readySize, hole;
+        int currentPendingSize = pending.size();
+        if(pending.size() > 0){
 
-        for (int h = 0; h < pending.size(); h++) {
+            for (int h = 0; h < pending.size(); h++) {
 
-            readySize = pending.get(h).getProcessSize();
-            hole = worstFit(readySize, blocks);
+                readySize = pending.get(h).getProcessSize();
+                hole = worstFit(readySize, blocks);
 
-            if (hole != 999) {
-                insertPart(readySize, blocks, hole); // inserting partition of process size into main block of memory
-                pending.get(h).lastStartTime = vtu;
-                if(pending.get(h).getElapsedTime() == 0) {
-                    pending.get(h).start = vtu;          // first time running
+                if (hole != 999) {
+                    insertPart(readySize, blocks, hole); // inserting partition of process size into main block of memory
+                    roomInMemoryPending = true;
+                    pending.get(h).lastStartTime = vtu;
+                    if(pending.get(h).getElapsedTime() == 0) {
+                        pending.get(h).start = vtu;          // first time running
+                    }
+                    running.add(pending.get(h));
+                    pending.remove(h);
+
                 }
-                running.add(pending.get(h));
-                pending.remove(h);
-
             }
-        }
+                // if no processes in pending list were placed in memory, set flag to false
+            if(pending.size() == currentPendingSize){
+                roomInMemoryPending = false;
+            }
+        } // end pending list check
 
-    } // end pending list check
-
-}
+    }
 
     public static void checkReadyQueue(ArrayList<MemBlock> blocks, ArrayList<Process> ready, ArrayList<Process> running,
                                        ArrayList<Process> pending, int vtu){
 
         int readySize, hole;
+        int currentReadySize = readyQueue.size();
         if(ready.size() > 0){
 
             for (int h = 0; h < ready.size(); h++) {
@@ -337,6 +387,7 @@ public static void checkPending(ArrayList<MemBlock> blocks, ArrayList<Process> p
                 if (hole != 999) {
                     insertPart(readySize, blocks, hole); // inserting partition of process size into main block of memory
                     ready.get(h).lastStartTime = vtu;
+                    roomInMemoryReady = true;
                     if(ready.get(h).getElapsedTime() == 0) {
                         ready.get(h).start = vtu;          // first time running
                     }
@@ -348,6 +399,11 @@ public static void checkPending(ArrayList<MemBlock> blocks, ArrayList<Process> p
                     }
                     ready.remove(h);
                 }
+            } // end loop through all processes in ready queue // after checking all the processes in the ready queue, if none
+             // were added to pending (full) and none accepted into memory, trip 1 of 2 flags for coalescence & compaction
+
+            if(currentReadySize == readyQueue.size()){
+                roomInMemoryReady = false;
             }
 
         } // end pending list check
@@ -362,12 +418,12 @@ public static void checkPending(ArrayList<MemBlock> blocks, ArrayList<Process> p
             for (int i = 0; i < running.size(); i++) {
 
                 if(running.get(i).getElapsedTime() >= running.get(i).getProcessTime() || (currentVtu - running.get(i).getLastStartTime() == 5)) {
-
+                    runningFlag = true;
                     for (int j = 0; j < blocks.size(); j++) {
 
                         if(running.get(i).getProcessSize() == blocks.get(j).getSize() && blocks.get(j).isPart()){
 
-                            removePart(blocks, j);
+                            removePart(blocks, j, running, pending, readyQueue, currentVtu);
                         }
                     } // check all blocks against the running processes
 
@@ -429,22 +485,60 @@ public static void checkPending(ArrayList<MemBlock> blocks, ArrayList<Process> p
                     processList.remove(0);
                 }
 
-
             if(currentVtu < 100) { // check ready queue first for the first 100 cycles, so the pending list can be built up a little
 
                 checkReadyQueue(blocks, readyQueue, running, pending, currentVtu);
                 checkPending(blocks, pending, running, currentVtu);
                 checkRunning(blocks, running, pending, finished, currentVtu);
             }
+/////////////////////////////////////////////////////////////////////////////// GOOOOOOD ///////////////////////////////
 
-                checkPending(blocks, pending, running, currentVtu);
-                checkReadyQueue(blocks, readyQueue, running, pending, currentVtu);
-                checkRunning(blocks, running, pending, finished, currentVtu);
+            /*
+                checking the ready queue, pending queue, and running list
+
+                Pending:
+
+                Ready Queue;
+
+                Running:
+             */
+            //int runningStatusBefore = running.size();
+
+            checkPending(blocks, pending, running, currentVtu);
+            checkReadyQueue(blocks, readyQueue, running, pending, currentVtu);
+            checkRunning(blocks, running, pending, finished, currentVtu);
+
+           // int runningStatusAfter = running.size();
+
+            // If no processes were added to memory from either the pending queue OR the ready queue --> COALESCE
+            // and then try once again to put a process in process after combining adjacent holes in memory
+            if(roomInMemoryReady && roomInMemoryPending == false && (runningFlag == true)) {
+
+                    // coalesce and try again
+                    coalesce(blocks, 1);
+
+                    checkPending(blocks, pending, running, currentVtu);
+                    checkReadyQueue(blocks, readyQueue, running, pending, currentVtu);
+                    checkRunning(blocks, running, pending, finished, currentVtu);
+
+                // If AFTER coalescing memory no processes were added to memory from either the pending queue OR the ready queue
+                // --> COMPACTION //
+                // Compact memory and try on more time this cycle to put a process in memory after compacting it
+                    if(roomInMemoryReady && roomInMemoryPending == false && (runningFlag == true)){
+
+                        //compaction
+                        compaction(blocks);
+
+                        checkPending(blocks, pending, running, currentVtu);
+                        checkReadyQueue(blocks, readyQueue, running, pending, currentVtu);
+                        checkRunning(blocks, running, pending, finished, currentVtu);
+
+                    }
+            }
 
 
 
-
-
+            // TODO : compact at set times
 
 
 
@@ -474,6 +568,7 @@ public static void checkPending(ArrayList<MemBlock> blocks, ArrayList<Process> p
             System.out.println("FINISHED: " + finished.size());
             System.out.println("\nREADY " + readyQueue.size() + "\n");
             System.out.println("PENDING " + pending.size());
+            System.out.println("\nMEMORY SIZE " + blocks.size());
 
         } // end main
 

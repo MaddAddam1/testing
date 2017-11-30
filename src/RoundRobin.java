@@ -46,10 +46,10 @@ public class RoundRobin {
 ////*********************************************************** Class Process *************************************************************************************************
         static class Process{
 
-            int pid, processSize, processTime, arrivalDelay, start, end, initialProcessTime, elapsedTime;
+            int pid, processSize, processTime, arrivalDelay, start, end, elapsedTime, lastStartTime;
 
             public Process(int pid, int processSize, int processTime, int arrivalDelay,
-                           int start, int end, int initialProcessTime, int elapsedTime){
+                           int start, int end, int elapsedTime, int lastStartTime){
 
                 this.pid = pid;
                 this.processSize = processSize;
@@ -57,8 +57,8 @@ public class RoundRobin {
                 this.arrivalDelay = arrivalDelay;
                 this.start = start;
                 this.end = end;
-                this.initialProcessTime = initialProcessTime;
                 this.elapsedTime = elapsedTime;
+                this.lastStartTime = lastStartTime;
 
             } // end Process method
 
@@ -84,12 +84,12 @@ public class RoundRobin {
             public int getEnd() {
                 return end;
             }
-            public int getInitialProcessTime() {
-                return initialProcessTime;
-            }
             public int getElapsedTime(){
                 return elapsedTime;
 
+            }
+            public int getLastStartTime(){
+                return lastStartTime;
             }
 
 
@@ -159,14 +159,14 @@ public class RoundRobin {
          *
          */
         public static boolean insertPart(int size, ArrayList<MemoryBlock> blocks, // size is process size, blocks are collections
-                                         int loc, ArrayList<Process> ready, int i) {                     // of memory blocks, which are collections of pages
+                                         int loc, ArrayList<Process> from, int i, int vtu) {                     // of memory blocks, which are collections of pages
             MemoryBlock b = blocks.get(loc);                             // pages = like 1 for each hk size, so 50kb = mem block of 50 pages
             int newHoleLoc, holeSize;
 
             if (b.getSize() == size) {
                 // partition fits exactly
                 b.makePart();
-                b.setPid(ready.get(i).getPid());
+                b.setPid(from.get(i).getPid());
 
             } else {
                 // extra hole left over
@@ -174,11 +174,15 @@ public class RoundRobin {
                 holeSize = b.getSize() - size;
                 b.setSize(size);
                 b.makePart();
-                //b.makePart();
-                //blocks.insertElementAt(new MemoryBlock(size,false), loc); //changed from vector
                 MemoryBlock c = new MemoryBlock(holeSize, true, -1);
                 blocks.add(loc + 1, c);     // replacing original block
             }
+            if(from.get(i).getElapsedTime() == 0){
+                from.get(i).start = vtu;
+            }
+
+            from.get(i).lastStartTime = vtu;
+
             //coalesce(blocks, loc);
 
             return true;
@@ -422,40 +426,37 @@ public class RoundRobin {
 
         return loc;
     } // end of bestFit()
+
+    public static void checkPending(ArrayList<MemoryBlock> blocks, ArrayList<Process> pending, ArrayList<Process> running, ArrayList<Process> ready, int vtu){
+        int readySize, hole;
+        if(pending.size() > 0) { // run through pending list first since it has priority over jobs in the ready queue
+
+            for (int h = 0; h < pending.size(); h++) {
+
+                readySize = pending.get(h).getProcessSize();
+                hole = firstFit(readySize, blocks);
+
+                if (hole != 999) {
+                    insertPart(readySize, blocks, hole, pending, h, vtu); // inserting partition of process size into main block of memory
+                    pending.get(h).lastStartTime = vtu;
+                    running.add(pending.get(h));
+                    if(pending.get(h).getElapsedTime() == 0) {
+                        pending.get(h).start = vtu;          // first time running
+                    }
+                    pending.remove(h);
+
+                }
+            }
+
+        } // end pending list check
+    }
 //******************************************************** END FITTING ALGORITHMS ************************************************************************************
 
     public static void tryInsert(ArrayList<MemoryBlock> blocks, ArrayList<Process> pending, ArrayList<Process> readyQueue, ArrayList<Process> running, int currentVtu){
 
         int readySize, hole;
 
-        if(pending.size() > 0) { // run through pending list first since it has priority over jobs in the ready queue
-
-            for (int h = 0; h < pending.size(); h++) {
-
-                readySize = pending.get(h).getProcessSize();
-                hole = worstFit(readySize, blocks);
-
-                if (hole != 999) {
-                    insertPart(readySize, blocks, hole, pending, h); // inserting partition of process size into main block of memory
-                    pending.get(h).start = currentVtu;
-                    //pending.get(h).end = (currentVtu + pending.get(h).getProcessTime());
-                    running.add(pending.get(h));
-                    pending.remove(h);
-
-                } else {
-
-                    // TODO: Try again after coalesce
-                   // coalesce(blocks, hole);
-                 //   hole = worstFit(readySize, blocks);
-                   // insertPart(readySize, blocks, hole);
-
-                    // TODO: Try again after compaction
-                    compaction(blocks);
-                    hole = worstFit(readySize, blocks);
-                    insertPart(readySize, blocks, hole, pending, h);
-                }
-            }
-        } // end pending list check
+        checkPending(blocks, pending, running, readyQueue, currentVtu);
 
         if(readyQueue.size() > 0) {
 
@@ -467,8 +468,8 @@ public class RoundRobin {
 
                 if (hole != 999) {
 
-                    insertPart(readySize, blocks, hole, readyQueue, b); // inserting partition of process size into main block of memory
-                    readyQueue.get(b).start = currentVtu;
+                    insertPart(readySize, blocks, hole, readyQueue, b, currentVtu); // inserting partition of process size into main block of memory
+                    //readyQueue.get(b).start = currentVtu;
                     //readyQueue.get(b).end = (currentVtu + readyQueue.get(b).getProcessTime());
                     running.add(readyQueue.get(b));
                     readyQueue.remove(b);
@@ -537,7 +538,7 @@ public class RoundRobin {
                         hole = firstFit(readySize, blocks);
 
                         if (hole != 999) {
-                            insertPart(readySize, blocks, hole, pending, h); // inserting partition of process size into main block of memory
+                            insertPart(readySize, blocks, hole, pending, h, currentVtu); // inserting partition of process size into main block of memory
 
                             if(pending.get(h).getElapsedTime() == 0) {
                                 pending.get(h).start = currentVtu;          // first time running
@@ -579,8 +580,8 @@ public class RoundRobin {
 
                         if (hole != 999) {
 
-                            insertPart(readySize, blocks, hole, readyQueue, b); // inserting partition of process size into main block of memory
-                            readyQueue.get(b).start = currentVtu;
+                            insertPart(readySize, blocks, hole, readyQueue, b, currentVtu); // inserting partition of process size into main block of memory
+                            //readyQueue.get(b).start = currentVtu;
                             //readyQueue.get(b).end = (currentVtu + readyQueue.get(b).getProcessTime());
                             running.add(readyQueue.get(b));
                             //readyQueue.remove(b);
@@ -656,7 +657,7 @@ public class RoundRobin {
 
                     for(int m = 0; m < running.size(); m++){
 
-                        if(running.get(m).getStart() + ROUND_ROBIN == currentVtu){ // Round Robin checking
+                        if(running.get(m).getElapsedTime() == (currentVtu - running.get(m).getLastStartTime())){ // Round Robin checking
 
 
                             for (int g = 0; g < blocks.size(); g++) { // find ejected process' corresponding memory block

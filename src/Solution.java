@@ -1,3 +1,5 @@
+import java.util.ArrayList;
+
 public class Solution {
     public static int[] twoSum(int[] nums, int target) {
 
@@ -18,11 +20,21 @@ public class Solution {
         return r;
     }
     public static void main(String[] args) {
-        int[] n = {7, 5, 3, 0, 99, 7, 0, 6, 11};
-        String v = java.util.Arrays.toString(twoSum(n, 13));
-        System.out.println(v);
-        System.out.println(n.length);
-        System.out.println(n[n.length-1]);
+        ArrayList<Integer> n = new ArrayList<Integer>();
+        n.add(0, 3);
+        n.add(1, 6);
+
+        n.add(2, 124);
+        n.add(3, 42);
+
+
+        System.out.println(n.size());
+
+        n.add(2, 9999);
+        System.out.println(n.get(2));
+        System.out.println(n.get(3));
+        System.out.println(n.size());
+
     }
 }
 
